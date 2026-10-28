@@ -1,6 +1,6 @@
 """Rank a Premier League gameweek from most to least worth watching, without spoilers.
 
-Match data comes from the Fantasy Premier League API. Jev sees the results; you only see the order.
+Match data comes from the Fantasy Premier League API. Jev sees the results, but you only see the order.
 """
 
 import argparse
@@ -16,7 +16,7 @@ FPL = "https://fantasy.premierleague.com/api"
 ENV_FILE = Path(__file__).with_name(".env")
 RANKINGS_DIR = Path(__file__).with_name("rankings")
 
-COUNTED_STATS = ["red_cards", "yellow_cards", "own_goals", "penalties_missed", "penalties_saved", "saves"]
+COUNTED_STATS = ["red_cards", "yellow_cards", "penalties_missed", "penalties_saved", "saves"]
 
 QUESTION = Score(
     instructions=(
@@ -34,7 +34,7 @@ QUESTION = Score(
 
 
 def load_env():
-    """Read KEY=value lines from .env next to this script; real environment variables win."""
+    """Load KEY=value lines from the .env beside this script. Variables already set take priority."""
     if not ENV_FILE.exists():
         return
     for line in ENV_FILE.read_text().splitlines():
@@ -44,12 +44,12 @@ def load_env():
 
 
 def fetch(path):
-    with urlopen(f"{FPL}/{path}") as response:
+    with urlopen(f"{FPL}/{path}", timeout=30) as response:
         return json.load(response)
 
 
 def positions_before(gameweek, fixtures, teams):
-    """League positions from matches finished in earlier gameweeks, so they don't reflect this round's results."""
+    """The league table as it stood before this gameweek, built from earlier results only."""
     points, goal_diff, goals_for = Counter(), Counter(), Counter()
     for fixture in fixtures:
         if not (fixture["finished"] and fixture["event"] and fixture["event"] < gameweek):
@@ -106,9 +106,12 @@ def main():
         return
 
     season = fetch("fixtures/")
-    fixtures = [f for f in season if f["event"] == gameweek and f["finished"]]
+    fixtures = [f for f in season if f["event"] == gameweek]
     if not fixtures:
-        raise SystemExit(f"No finished matches in gameweek {gameweek}.")
+        raise SystemExit(f"No matches in gameweek {gameweek}.")
+    if not all(f["finished"] for f in fixtures):
+        print(f"Gameweek {gameweek} hasn't finished yet.")
+        return
     positions = positions_before(gameweek, season, teams)
 
     scores = {}

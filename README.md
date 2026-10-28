@@ -2,7 +2,7 @@
 
 Ranks the latest Premier League gameweek from most to least worth watching, without spoiling any results.
 
-Match data comes from the Fantasy Premier League API. Each match is scored by [TypeSafe's Jev](https://typesafe.ai), and only the order is shown.
+Match data comes from the Fantasy Premier League API. [TypeSafe's Jev](https://typesafe.ai) scores each match, and you only see the order.
 
 ## Setup
 
