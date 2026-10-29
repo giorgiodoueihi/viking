@@ -12,6 +12,14 @@ python3 -m venv .venv
 echo "TYPESAFE_API_KEY=your-key" > .env
 ```
 
+To add a replay link to each match, write a provider and choose it in `.env` too. A provider is a module in `providers/` with a `replays(fixtures, teams)` function that returns replay URLs keyed by FPL fixture id. Its name is its file name, so `providers/example.py` is chosen like this:
+
+```bash
+echo "REPLAY_PROVIDER=example" >> .env
+```
+
+See `ReplayProvider` in [providers/__init__.py](providers/__init__.py) for the details.
+
 ## Usage
 
 ```bash

@@ -4,13 +4,18 @@ Match data comes from the Fantasy Premier League API. Jev sees the results, but 
 """
 
 import argparse
+import importlib
 import json
 import os
+import sys
 from collections import Counter
 from pathlib import Path
 from urllib.request import urlopen
+from xml.etree.ElementTree import ParseError
 
 from typesafe_sdk import Score, TypeSafeClient
+
+from providers import PROVIDERS
 
 FPL = "https://fantasy.premierleague.com/api"
 ENV_FILE = Path(__file__).with_name(".env")
@@ -46,6 +51,17 @@ def load_env():
 def fetch(path):
     with urlopen(f"{FPL}/{path}", timeout=30) as response:
         return json.load(response)
+
+
+def find_replays(provider, fixtures, teams):
+    """Replay links by fixture id. They're optional, so a failing provider is reported and gives none."""
+    if not provider:
+        return {}
+    try:
+        return importlib.import_module(f"providers.{provider}").replays(fixtures, teams)
+    except (ImportError, OSError, ValueError, ParseError) as error:
+        print(f"Skipping replay links from {provider}: {error!r}", file=sys.stderr)
+        return {}
 
 
 def positions_before(gameweek, fixtures, teams):
@@ -86,17 +102,44 @@ def describe(fixture, teams, positions):
     return {"home": side("h", "home"), "away": side("a", "away")}
 
 
+def latest_gameweek(events):
+    return max((e["id"] for e in events if e["finished"] and e["data_checked"]), default=None)
+
+
+def score_fixtures(fixtures, teams, positions):
+    """Jev's interest score for each fixture, keyed by fixture id."""
+    scores = {}
+    with TypeSafeClient(model="jev-latest") as client:
+        for fixture in fixtures:
+            state = describe(fixture, teams, positions)
+            response = client.system_one(state=state, questions={"interest": QUESTION})
+            scores[fixture["id"]] = response.scores["interest"].score
+    return scores
+
+
+def ranking_text(gameweek, fixtures, scores, teams, replays):
+    ranked = sorted(fixtures, key=lambda f: scores[f["id"]], reverse=True)
+    lines = [f"Gameweek {gameweek}, most to least worth watching:", ""]
+    for rank, fixture in enumerate(ranked, 1):
+        home = teams[fixture["team_h"]]["name"]
+        away = teams[fixture["team_a"]]["name"]
+        replay = replays.get(fixture["id"])
+        lines.append(f"{rank:>2}. {home} v {away}" + (f" - {replay}" if replay else ""))
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gameweek", type=int, help="defaults to the latest gameweek with final stats")
     args = parser.parse_args()
     load_env()
+    provider = os.environ.get("REPLAY_PROVIDER")
+    if provider and provider not in PROVIDERS:
+        raise SystemExit(f"Unknown REPLAY_PROVIDER {provider!r}. Choose from: {', '.join(PROVIDERS) or 'none, as providers/ has no modules'}.")
 
     bootstrap = fetch("bootstrap-static/")
     teams = {t["id"]: t for t in bootstrap["teams"]}
-    gameweek = args.gameweek or max(
-        (e["id"] for e in bootstrap["events"] if e["finished"] and e["data_checked"]), default=None
-    )
+    gameweek = args.gameweek or latest_gameweek(bootstrap["events"])
     if gameweek is None:
         print("No gameweek has final stats yet.")
         return
@@ -114,21 +157,9 @@ def main():
         return
     positions = positions_before(gameweek, season, teams)
 
-    scores = {}
-    with TypeSafeClient(model="jev-latest") as client:
-        for fixture in fixtures:
-            state = describe(fixture, teams, positions)
-            response = client.system_one(state=state, questions={"interest": QUESTION})
-            scores[fixture["id"]] = response.scores["interest"].score
-
-    ranked = sorted(fixtures, key=lambda f: scores[f["id"]], reverse=True)
-    lines = [f"Gameweek {gameweek}, most to least worth watching:", ""]
-    for rank, fixture in enumerate(ranked, 1):
-        home = teams[fixture["team_h"]]["name"]
-        away = teams[fixture["team_a"]]["name"]
-        lines.append(f"{rank:>2}. {home} v {away}")
-
-    text = "\n".join(lines) + "\n"
+    scores = score_fixtures(fixtures, teams, positions)
+    replays = find_replays(provider, fixtures, teams)
+    text = ranking_text(gameweek, fixtures, scores, teams, replays)
     RANKINGS_DIR.mkdir(exist_ok=True)
     output.write_text(text)
     print(text, end="")
