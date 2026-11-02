@@ -117,9 +117,10 @@ def score_fixtures(fixtures, teams, positions):
     return scores
 
 
-def ranking_text(gameweek, fixtures, scores, teams, replays):
+def ranking_text(gameweek, fixtures, scores, teams, replays, partial=False):
     ranked = sorted(fixtures, key=lambda f: scores[f["id"]], reverse=True)
-    lines = [f"Gameweek {gameweek}, most to least worth watching:", ""]
+    label = f"Gameweek {gameweek} (partial, stats may still change)" if partial else f"Gameweek {gameweek}"
+    lines = [f"{label}, most to least worth watching:", ""]
     for rank, fixture in enumerate(ranked, 1):
         home = teams[fixture["team_h"]]["name"]
         away = teams[fixture["team_a"]]["name"]
@@ -131,6 +132,7 @@ def ranking_text(gameweek, fixtures, scores, teams, replays):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gameweek", type=int, help="defaults to the latest gameweek with final stats")
+    parser.add_argument("--partial", action="store_true", help="rank the matches played so far in an unfinished gameweek, without saving")
     args = parser.parse_args()
     load_env()
     provider = os.environ.get("REPLAY_PROVIDER")
@@ -152,16 +154,25 @@ def main():
     fixtures = [f for f in season if f["event"] == gameweek]
     if not fixtures:
         raise SystemExit(f"No matches in gameweek {gameweek}.")
-    if not all(f["finished"] for f in fixtures):
-        print(f"Gameweek {gameweek} hasn't finished yet.")
-        return
+    partial = not all(f["finished"] for f in fixtures)
+    if partial:
+        if not args.partial:
+            print(f"Gameweek {gameweek} hasn't finished yet. Pass --partial to rank the matches played so far.")
+            return
+        # FPL marks a match finished_provisional at full time and finished only once its stats are checked.
+        fixtures = [f for f in fixtures if f["finished"] or f["finished_provisional"]]
+        if not fixtures:
+            print(f"No matches in gameweek {gameweek} have finished yet.")
+            return
     positions = positions_before(gameweek, season, teams)
 
     scores = score_fixtures(fixtures, teams, positions)
     replays = find_replays(provider, fixtures, teams)
-    text = ranking_text(gameweek, fixtures, scores, teams, replays)
-    RANKINGS_DIR.mkdir(exist_ok=True)
-    output.write_text(text)
+    text = ranking_text(gameweek, fixtures, scores, teams, replays, partial)
+    # A partial ranking isn't saved, so the full one can still be made once the gameweek ends.
+    if not partial:
+        RANKINGS_DIR.mkdir(exist_ok=True)
+        output.write_text(text)
     print(text, end="")
 
 
