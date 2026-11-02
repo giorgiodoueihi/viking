@@ -27,3 +27,5 @@ See `ReplayProvider` in [providers/__init__.py](providers/__init__.py) for the d
 ```
 
 Each ranking is saved to `rankings/gwN.txt`, and a gameweek that's already been ranked is skipped. Use `--gameweek N` to rank a specific round.
+
+Pass `--partial` to rank the matches played so far in an unfinished gameweek. That ranking is saved to `rankings/gwN-partial.txt` (overwritten on each run), so the full ranking can still be made once the gameweek ends. The partial file is deleted when the full ranking is saved.

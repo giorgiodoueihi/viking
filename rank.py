@@ -132,7 +132,7 @@ def ranking_text(gameweek, fixtures, scores, teams, replays, partial=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gameweek", type=int, help="defaults to the latest gameweek with final stats")
-    parser.add_argument("--partial", action="store_true", help="rank the matches played so far in an unfinished gameweek, without saving")
+    parser.add_argument("--partial", action="store_true", help="rank the matches played so far in an unfinished gameweek, saved as gwN-partial.txt")
     args = parser.parse_args()
     load_env()
     provider = os.environ.get("REPLAY_PROVIDER")
@@ -169,10 +169,14 @@ def main():
     scores = score_fixtures(fixtures, teams, positions)
     replays = find_replays(provider, fixtures, teams)
     text = ranking_text(gameweek, fixtures, scores, teams, replays, partial)
-    # A partial ranking isn't saved, so the full one can still be made once the gameweek ends.
-    if not partial:
-        RANKINGS_DIR.mkdir(exist_ok=True)
+    RANKINGS_DIR.mkdir(exist_ok=True)
+    partial_output = output.with_name(f"gw{gameweek}-partial.txt")
+    if partial:
+        # Separate file, so the "already ranked" check doesn't block the full ranking.
+        partial_output.write_text(text)
+    else:
         output.write_text(text)
+        partial_output.unlink(missing_ok=True)
     print(text, end="")
 
 
